@@ -1,0 +1,175 @@
+#!/bin/bash
+# chkconfig: 2345 55 25
+# description: bt Cloud Service
+
+### BEGIN INIT INFO
+# Provides:          bt
+# Required-Start:    $all
+# Required-Stop:     $all
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: starts bt
+# Description:       starts the bt
+### END INIT INFO
+panel_path=/www/server/panel
+cd $panel_path
+panel_start()
+{
+        isStart=`ps aux |grep 'python main.pyc'|grep -v grep|awk '{print $2}'`
+        if [ "$isStart" == '' ];then
+                echo -e "正在启动 BT-Panel 服务... \c"
+                if [ -f 'main.py' ];then
+                        python -m py_compile main.py
+                fi
+                nohup python main.pyc `cat data/port.pl` >> /tmp/panelBoot.pl 2>&1 &
+                sleep 0.2
+                isStart=`ps aux |grep 'python main.pyc'|grep -v grep|awk '{print $2}'`
+                if [ "$isStart" == '' ];then
+                        echo -e "\033[31m失败\033[0m"
+                        echo '------------------------------------------------------'
+                        cat /tmp/panelBoot.pl
+                        echo '------------------------------------------------------'
+                        echo -e "\033[31mBT-Panel 服务启动失败！\033[0m"
+                        return;
+                fi
+                echo -e "\033[32m完成\033[0m"
+        else
+                echo "BT-Panel 服务（pid $isStart）已在运行！"
+        fi
+
+        isStart=`ps aux |grep 'python task.pyc$'|awk '{print $2}'`
+        if [ "$isStart" == '' ];then
+                echo -e "正在启动 BT-Tasks 服务... \c"
+                if [ -f 'task.py' ];then
+                        python -m py_compile task.py
+                fi
+                nohup python task.pyc >> /tmp/panelTask.pl 2>&1 &
+                sleep 0.2
+                isStart=`ps aux |grep 'python task.pyc$'|awk '{print $2}'`
+                if [ "$isStart" == '' ];then
+                        echo -e "\033[31m失败\033[0m"
+                        echo '------------------------------------------------------'
+                        cat /tmp/panelTask.pl
+                        echo '------------------------------------------------------'
+                        echo -e "\033[31mBT-Task 服务启动失败！\033[0m"
+                        return;
+                fi
+                echo -e "\033[32m完成\033[0m"
+        else
+                echo "BT-Tasks 服务（pid $isStart）已在运行！"
+        fi
+}
+
+panel_stop()
+{
+        echo -e "正在停止 BT-Tasks 服务... \c";
+        pids=`ps aux | grep 'python task.pyc$'|awk '{print $2}'`
+        arr=($pids)
+
+        for p in ${arr[@]}
+        do
+                kill -9 $p
+        done
+        echo -e "\033[32m完成\033[0m"
+
+        echo -e "正在停止 BT-Panel 服务... \c";
+        pids=`ps aux | grep 'python main.pyc'|grep -v grep|awk '{print $2}'`
+        arr=($pids)
+
+        for p in ${arr[@]}
+        do
+                kill -9 $p
+        done
+        echo -e "\033[32m完成\033[0m"
+}
+
+panel_status()
+{
+        isStart=`ps aux |grep 'python main.pyc'|grep -v grep|awk '{print $2}'`
+        if [ "$isStart" != '' ];then
+                echo -e "\033[32mBT-Panel 服务（pid $isStart）已在运行！\033[0m"
+        else
+                echo -e "\033[31mBT-Panel 服务没有启动！\033[0m"
+        fi
+
+        isStart=`ps aux |grep 'python task.pyc$'|awk '{print $2}'`
+        if [ "$isStart" != '' ];then
+                echo -e "\033[32mBT-Task 服务（pid $isStart）已在运行！\033[0m"
+        else
+                echo -e "\033[31mBT-Task 服务没有启动！\033[0m"
+        fi
+}
+
+panel_reload()
+{
+        isStart=`ps aux |grep 'python main.pyc'|grep -v grep|awk '{print $2}'`
+        if [ "$isStart" != '' ];then
+                echo -e "重新加载 BT-Panel 服务... \c"
+                pids=`ps aux | grep 'python main.pyc'|grep -v grep|awk '{print $2}'`
+                arr=($pids)
+                for p in ${arr[@]}
+                do
+                        kill -9 $p
+                done
+                nohup python main.pyc `cat data/port.pl` >> /tmp/panelBoot.pl 2>&1 &
+                if [ "$isStart" == '' ];then
+                        echo -e "\033[31m失败\033[0m"
+                        echo '------------------------------------------------------'
+                        cat /tmp/panelBoot.pl
+                        echo '------------------------------------------------------'
+                        echo -e "\033[31mBT-Panel 服务启动失败！\033[0m"
+                        return;
+                fi
+                echo -e "\033[32m完成\033[0m"
+        else
+                echo -e "\033[31mBT-Panel 服务没有启动！\033[0m"
+        fi
+}
+
+install_used()
+{
+        if [ ! -f /www/server/panel/aliyun.pl ];then
+                return;
+        fi
+        password=`cat /dev/urandom | head -n 16 | md5sum | head -c 12`
+        username=`python /www/server/panel/tools.py panel $password`
+        echo "$password" > /www/server/panel/default.pl
+        rm -f /www/server/panel/aliyun.pl
+}
+
+
+case "$1" in
+        'start')
+                install_used
+                panel_start
+                ;;
+        'stop')
+                panel_stop
+                ;;
+        'restart')
+                panel_stop
+                sleep 0.2
+                panel_start
+                ;;
+        'reload')
+                panel_reload
+                ;;
+        'status')
+                panel_status
+                ;;
+        'default')
+                port=`cat /www/server/panel/data/port.pl`
+                password=`cat /www/server/panel/default.pl`
+                echo -e "=================================================================="
+                echo -e "用 户 名：admin"
+                echo -e "密    码：$password"
+                echo -e ""
+                echo -e "\033[33m如果你无法访问面板，\033[0m"
+                echo -e "\033[33m请在安全组规则中放行以下端口：8888|888|80|443|20|21\033[0m"
+                echo -e "=================================================================="
+
+                ;;
+        *)
+                echo "使用方法：/etc/init.d/bt {start|stop|restart|reload|default}"
+        ;;
+esac
